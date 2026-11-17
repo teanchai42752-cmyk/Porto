@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)?.[1];
+const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(script, 'index.html must contain its application script');
 assert.doesNotThrow(() => new vm.Script(script, { filename: 'index.html:inline-script' }), 'inline JavaScript must parse');
 
@@ -11,21 +11,21 @@ const requiredModes = ['market', 'portfolio', 'analyst', 'risk', 'cfo', 'quiz'];
 for (const mode of requiredModes) {
   assert.ok(html.includes(`id="page-${mode}"`), `missing game mode: ${mode}`);
 }
-const ids = [...html.matchAll(/\\bid="([^"]+)"/g)].map(match => match[1]);
+const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
 assert.equal(ids.length, new Set(ids).size, 'HTML ids must be unique');
 assert.match(html, /class="skip-link"/, 'keyboard skip link should exist');
 assert.match(html, /aria-live="polite"/, 'dynamic feedback should be announced');
 assert.match(html, /prefers-reduced-motion/, 'reduced-motion preference should be respected');
 assert.match(html, /aria-label="สัดส่วนลงทุนใน/, 'allocation inputs need accessible names');
 
-assert.match(script, /MAX_MARKET_HISTORY=240/, 'endless market chart history must be bounded');
-assert.match(script, /S\\.marketHistory\\.length>MAX_MARKET_HISTORY/, 'market history must be capped while advancing');
-assert.match(script, /function escapeHTML/, 'saved content must be escaped before HTML rendering');
-assert.match(script, /csvCell/, 'CSV export must defend against spreadsheet formulas');
-assert.match(script, /S\\.quizDone\\|\\|S\\.quizAnswered/, 'quiz answers must not be rewarded repeatedly after a reload');
-assert.match(script, /function calculateVaR/, 'VaR calculation helper should exist');
-assert.match(script, /function blendAllocations/, 'actual invested weights should blend across rebalances');
-assert.match(script, /function cfoEquipmentCashImpact/, 'CFO equipment cash impacts should be explicit');
+assert.ok(script.includes('MAX_MARKET_HISTORY=240'), 'endless market chart history must be bounded');
+assert.ok(script.includes('S.marketHistory.length>MAX_MARKET_HISTORY'), 'market history must be capped while advancing');
+assert.ok(script.includes('function escapeHTML'), 'saved content must be escaped before HTML rendering');
+assert.ok(script.includes('csvCell'), 'CSV export must defend against spreadsheet formulas');
+assert.ok(script.includes('if(S.quizDone||S.quizAnswered)return'), 'quiz answers must not be rewarded repeatedly after a reload');
+assert.ok(script.includes('function calculateVaR'), 'VaR calculation helper should exist');
+assert.ok(script.includes('function blendAllocations'), 'actual invested weights should blend across rebalances');
+assert.ok(script.includes('function cfoEquipmentCashImpact'), 'CFO equipment cash impacts should be explicit');
 
 const assets = [
   { ret: 9.5, risk: 22 },
@@ -41,7 +41,7 @@ const correlations = [
 ];
 const context = vm.createContext({ S: { alloc: [35, 25, 15, 10] }, assets, correlations });
 const portfolioStart = script.indexOf('function portfolioStats(');
-const portfolioEnd = script.indexOf('\\nconst events=', portfolioStart);
+const portfolioEnd = script.indexOf('\nconst events=', portfolioStart);
 assert.ok(portfolioStart >= 0 && portfolioEnd > portfolioStart, 'portfolioStats function must be present');
 new vm.Script(script.slice(portfolioStart, portfolioEnd)).runInContext(context);
 const helpersStart = script.indexOf('function calculateVaR(');
