@@ -27,6 +27,7 @@ assert.ok(script.includes('quizRewarded') && script.includes('cfoRewarded') && s
 assert.ok(script.includes('function calculateVaR'), 'VaR calculation helper should exist');
 assert.ok(script.includes('function blendAllocations'), 'actual invested weights should blend across rebalances');
 assert.ok(script.includes('function cfoEquipmentCashImpact'), 'CFO equipment cash impacts should be explicit');
+assert.ok(script.includes('function cfoWorkingCapitalCashImpact'), 'CFO working-capital cash impacts should be explicit');
 
 const assets = [
   { ret: 9.5, risk: 22 },
@@ -87,6 +88,11 @@ assert.deepEqual(
   [0, 1, 2].map(i => vm.runInContext(`cfoBestChoice(${i})`, context)),
   [1, 0, 2],
   'CFO correct answer positions should not be identical in every case',
+);
+assert.deepEqual(
+  [0, 1, 2].map(i => vm.runInContext(`cfoWorkingCapitalCashImpact(${i})`, context)),
+  [-900_000, 150_000, -350_000],
+  'CFO working-capital choices must have differentiated cash impacts',
 );
 
 console.log('PORTO smoke tests passed: syntax, six modes, accessibility, portfolio math, VaR, allocation blending, balanced answers, CFO cash flows and anti-farming guards.');
