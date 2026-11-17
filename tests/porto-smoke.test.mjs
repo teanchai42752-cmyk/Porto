@@ -23,6 +23,7 @@ assert.ok(script.includes('S.marketHistory.length>MAX_MARKET_HISTORY'), 'market 
 assert.ok(script.includes('function escapeHTML'), 'saved content must be escaped before HTML rendering');
 assert.ok(script.includes('csvCell'), 'CSV export must defend against spreadsheet formulas');
 assert.ok(script.includes('if(S.quizDone||S.quizAnswered)return'), 'quiz answers must not be rewarded repeatedly after a reload');
+assert.ok(script.includes('quizRewarded') && script.includes('cfoRewarded') && script.includes('portfolioRewarded'), 'repeat attempts must not farm progression XP');
 assert.ok(script.includes('function calculateVaR'), 'VaR calculation helper should exist');
 assert.ok(script.includes('function blendAllocations'), 'actual invested weights should blend across rebalances');
 assert.ok(script.includes('function cfoEquipmentCashImpact'), 'CFO equipment cash impacts should be explicit');
@@ -48,6 +49,10 @@ const helpersStart = script.indexOf('function calculateVaR(');
 const helpersEnd = script.indexOf('function go(', helpersStart);
 assert.ok(helpersStart >= 0 && helpersEnd > helpersStart, 'risk and allocation helpers must be present');
 new vm.Script(script.slice(helpersStart, helpersEnd)).runInContext(context);
+const qsetStart = script.indexOf('const qset=[');
+const qsetEnd = script.indexOf('function money(', qsetStart);
+assert.ok(qsetStart >= 0 && qsetEnd > qsetStart, 'knowledge trial questions must be present');
+new vm.Script(script.slice(qsetStart, qsetEnd)).runInContext(context);
 
 const weights = [35 / 85, 25 / 85, 15 / 85, 10 / 85];
 const expectedReturn = weights.reduce((sum, weight, i) => sum + weight * assets[i].ret, 0);
@@ -67,10 +72,21 @@ assert.ok(Math.abs(actualVaR - expectedVaR) < 1e-8, '1-day 95% parametric VaR mu
 
 const blended = Array.from(vm.runInContext('blendAllocations([0.25,0.75,0,0],800,[0.75,0.25,0,0],200)', context));
 assert.ok(Math.abs(blended[0] - 0.35) < 1e-10 && Math.abs(blended[1] - 0.65) < 1e-10, 'rebalance must blend actual holdings by invested value');
+
+assert.deepEqual(
+  Array.from(vm.runInContext('qset.map(q=>q.a)', context)),
+  [0, 1, 2, 3, 0, 1, 2, 3],
+  'quiz correct answers should be balanced across A/B/C/D',
+);
 assert.deepEqual(
   [0, 1, 2].map(i => vm.runInContext(`cfoEquipmentCashImpact(${i})`, context)),
-  [-1_800_000, -540_000, -1_200_000],
+  [-540_000, -1_800_000, -1_200_000],
   'CFO equipment choices must have distinct 90-day cash impacts',
 );
+assert.deepEqual(
+  [0, 1, 2].map(i => vm.runInContext(`cfoBestChoice(${i})`, context)),
+  [1, 0, 2],
+  'CFO correct answer positions should not be identical in every case',
+);
 
-console.log('PORTO smoke tests passed: syntax, six modes, accessibility, portfolio math, VaR, allocation blending, CFO cash flows, and persistence guards.');
+console.log('PORTO smoke tests passed: syntax, six modes, accessibility, portfolio math, VaR, allocation blending, balanced answers, CFO cash flows and anti-farming guards.');
