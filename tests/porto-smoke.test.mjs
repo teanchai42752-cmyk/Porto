@@ -107,8 +107,13 @@ assert.ok(Math.abs(riskOn - 25.3) < 1e-10, 'Risk-on profile must raise equity vo
 assert.ok(Math.abs(defensive - 16.5) < 1e-10, 'Defensive profile must lower equity volatility');
 assert.ok(Math.abs(balanced - 22) < 1e-10, 'Balanced profile must preserve the asset volatility assumption');
 
-const legacyHoldings = Array.from(vm.runInContext('holdingsFromAllocation(1000000,[.35,.25,.15,.10])', context));
-assert.deepEqual(legacyHoldings, [350000,250000,150000,100000], 'v3 invested value and weights must migrate into monetary holdings');
+const legacyHoldings = Array.from(vm.runInContext('holdingsFromAllocation(1000000,[35,25,15,10])', context));
+const expectedLegacyHoldings = [35,25,15,10].map(weight => 1_000_000 * weight / 85);
+assert.ok(
+  legacyHoldings.every((value, i) => Math.abs(value - expectedLegacyHoldings[i]) < 1e-6),
+  'v3 invested value and unnormalized allocation percentages must migrate into monetary holdings',
+);
+assert.ok(Math.abs(legacyHoldings.reduce((a,b)=>a+b,0)-1_000_000)<1e-6, 'v3 holdings migration must preserve the invested total');
 const toppedUpHoldings = Array.from(vm.runInContext('addInvestmentToHoldings([350000,250000,150000,100000],200000,[0,0,1,0])', context));
 assert.deepEqual(toppedUpHoldings, [350000,250000,350000,100000], 'new investment must add to existing asset values without replacing them');
 
