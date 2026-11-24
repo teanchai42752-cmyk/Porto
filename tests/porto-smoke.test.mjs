@@ -25,6 +25,11 @@ assert.ok(script.includes('csvCell'), 'CSV export must defend against spreadshee
 assert.ok(script.includes('if(S.quizDone||S.quizAnswered)return'), 'quiz answers must not be rewarded repeatedly after a reload');
 assert.ok(script.includes('quizRewarded') && script.includes('cfoRewarded') && script.includes('portfolioRewarded'), 'repeat attempts must not farm progression XP');
 assert.ok(script.includes('function calculateVaR'), 'VaR calculation helper should exist');
+assert.ok(script.includes('function simulateMonthlyMarket'), 'asset-level market simulation must exist');
+assert.ok(script.includes('function applyMarketReturns'), 'monthly market returns must update individual holdings');
+assert.ok(script.includes("porto-save-v4") && script.includes("porto-save-v3") && script.includes("porto-save-v2"), 'v4 save must preserve v3/v2 migration paths');
+assert.ok(script.includes('S.holdings=addInvestmentToHoldings'), 'portfolio rebalancing must preserve monetary holdings');
+assert.ok(!script.includes('const riskyExposure=i===0'), 'legacy single-return portfolio approximation must be removed');
 assert.ok(script.includes('function blendAllocations'), 'actual invested weights should blend across rebalances');
 assert.ok(script.includes('function cfoEquipmentCashImpact'), 'CFO equipment cash impacts should be explicit');
 assert.ok(script.includes('function cfoWorkingCapitalCashImpact'), 'CFO working-capital cash impacts should be explicit');
@@ -41,12 +46,12 @@ const correlations = [
   [-.12, -.18, 1, .16],
   [.08, .04, .16, 1],
 ];
-const context = vm.createContext({ S: { alloc: [35, 25, 15, 10] }, assets, correlations });
-const portfolioStart = script.indexOf('function portfolioStats(');
+const context = vm.createContext({ S: { alloc: [35, 25, 15, 10], marketStrategy: 2 }, assets, correlations });
+const portfolioStart = script.indexOf('const strategyVolatilityProfiles=');
 const portfolioEnd = script.indexOf('\nconst events=', portfolioStart);
-assert.ok(portfolioStart >= 0 && portfolioEnd > portfolioStart, 'portfolioStats function must be present');
+assert.ok(portfolioStart >= 0 && portfolioEnd > portfolioStart, 'portfolio engine functions must be present');
 new vm.Script(script.slice(portfolioStart, portfolioEnd)).runInContext(context);
-const helpersStart = script.indexOf('function calculateVaR(');
+const helpersStart = script.indexOf('function money(');
 const helpersEnd = script.indexOf('function go(', helpersStart);
 assert.ok(helpersStart >= 0 && helpersEnd > helpersStart, 'risk and allocation helpers must be present');
 new vm.Script(script.slice(helpersStart, helpersEnd)).runInContext(context);
@@ -89,10 +94,42 @@ assert.deepEqual(
   [1, 0, 2],
   'CFO correct answer positions should not be identical in every case',
 );
+const correlated = Array.from(vm.runInContext('correlateNormals([1,0,0,0])', context));
+assert.ok(
+  correlated.every((value, i) => Math.abs(value - [1, .72, -.12, .08][i]) < 1e-10),
+  'Cholesky transform must preserve the configured asset correlations',
+);
+
+const riskOn = vm.runInContext('portfolioStats([100,0,0,0],0).risk', context);
+const defensive = vm.runInContext('portfolioStats([100,0,0,0],1).risk', context);
+const balanced = vm.runInContext('portfolioStats([100,0,0,0],2).risk', context);
+assert.ok(Math.abs(riskOn - 25.3) < 1e-10, 'Risk-on profile must raise equity volatility by its documented multiplier');
+assert.ok(Math.abs(defensive - 16.5) < 1e-10, 'Defensive profile must lower equity volatility');
+assert.ok(Math.abs(balanced - 22) < 1e-10, 'Balanced profile must preserve the asset volatility assumption');
+
+const legacyHoldings = Array.from(vm.runInContext('holdingsFromAllocation(1000000,[.35,.25,.15,.10])', context));
+assert.deepEqual(legacyHoldings, [350000,250000,150000,100000], 'v3 invested value and weights must migrate into monetary holdings');
+const toppedUpHoldings = Array.from(vm.runInContext('addInvestmentToHoldings([350000,250000,150000,100000],200000,[0,0,1,0])', context));
+assert.deepEqual(toppedUpHoldings, [350000,250000,350000,100000], 'new investment must add to existing asset values without replacing them');
+
+const marketRiskOn = vm.runInContext("simulateMonthlyMarket('Rate shock',0,[1,-.5,.25,-.25],1,.002)", context);
+const marketDefensive = vm.runInContext("simulateMonthlyMarket('Rate shock',1,[1,-.5,.25,-.25],1,.002)", context);
+assert.ok(Math.abs(marketRiskOn.benchmarkReturn - marketDefensive.benchmarkReturn) < 1e-12, 'market benchmark return must not depend on the selected strategy');
+assert.notDeepEqual(
+  Array.from(marketRiskOn.assetReturns),
+  Array.from(marketDefensive.assetReturns),
+  'the strategy must change the risk sensitivity of actual holdings',
+);
+
+const applied = vm.runInContext('applyMarketReturns([600,400,0,0],[.10,-.05,0,0])', context);
+assert.ok(Math.abs(applied.invested - 1040) < 1e-10, 'market return update must sum asset-level holding values');
+assert.ok(Math.abs(applied.portfolioReturn - .04) < 1e-10, 'portfolio return must be weighted by actual holding values');
+assert.ok(Math.abs(applied.weights[0] - 660 / 1040) < 1e-10, 'post-market allocation weights must be refreshed');
+
 assert.deepEqual(
   [0, 1, 2].map(i => vm.runInContext(`cfoWorkingCapitalCashImpact(${i})`, context)),
   [-900_000, 150_000, -350_000],
   'CFO working-capital choices must have differentiated cash impacts',
 );
 
-console.log('PORTO smoke tests passed: syntax, six modes, accessibility, portfolio math, VaR, allocation blending, balanced answers, CFO cash flows and anti-farming guards.');
+console.log('PORTO smoke tests passed: syntax, six modes, accessibility, covariance, VaR, monetary holdings, asset-level market simulation, strategy risk profiles, balanced answers, CFO cash flows and anti-farming guards.');
